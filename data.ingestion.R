@@ -35,19 +35,20 @@ Polity <- read_excel(path = temp3) %>%
 Polity$countrycode <- countrycode(Polity$country, "country.name", "iso3c") # add iso3c country codes for merging
 
 # WDI
-WDI <- c("NE.TRD.GNFS.ZS",             # Trade (% of GDP)
-             "NE.GDI.FTOT.ZS",         # FCF
-             "NE.CON.GOVT.ZS",         # GovFCE
-             "FP.CPI.TOTL.ZG",         # Inflation, consumer prices (annual %)
-             "SP.POP.TOTL",            # Population, total
-             "SP.DYN.LE00.IN",         # Urban population (% of total)
-             "NY.ADJ.DNGY.GN.ZS") %>%  # Adjusted savings: energy depletion (% of GNI)                                            
+WDI <- c("NY.GDP.PCAP.PP.KD",          # GDP per capita, PPP (constant 2011 international $)
+         "NE.TRD.GNFS.ZS",             # Trade (% of GDP)
+         "NE.GDI.FTOT.ZS",             # FCF
+         "NE.CON.GOVT.ZS",             # GovFCE
+         "FP.CPI.TOTL.ZG",             # Inflation, consumer prices (annual %)
+         "SP.POP.TOTL",                # Population, total
+         "SE.SEC.ENRR",                # School enrollment, secondary (% of pop of official 2ndary school age)
+         "NY.ADJ.DNGY.GN.ZS") %>%      # Adjusted savings: energy depletion (% of GNI)                                            
     WDI(country="all", indicator = ., extra = FALSE, start = 1960, end = 2014)
 WDI$countrycode <- countrycode(WDI$iso2c, "iso2c", "iso3c")  # add iso3c country codes
 WDI <- WDI %>%
     filter(is.na(countrycode)==FALSE) %>%  # drop rows for regions and world
     select(-iso2c, -country)  # drop extra country ids
-names(WDI) <- c("year", "trade", "fcf", "govfce", "inflation", "population", "life.expectancy", "energy.gni", "countrycode")  # give vars better names
+names(WDI) <- c("year", "gdppc", "trade", "fcf", "govfce", "inflation", "population", "sec.enrr", "energy.gni", "countrycode")  # give vars better names
 
 # MEPV
 temp4 <- paste0(tempfile(), ".xls")
