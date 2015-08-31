@@ -67,4 +67,8 @@ Meld <- left_join(Polity, PWT) %>% # add PWT to Polity, dropping PWT's country s
     mutate(cpt.succ.n = ifelse(is.na(cpt.succ.n), 0, cpt.succ.n), cpt.fail.n = ifelse(is.na(cpt.fail.n), 0, cpt.fail.n)) %>% # replace coup NAs with 0s
     arrange(country, year)
 
+# Remove rows with duplicated values of countrycode/year pairs, keeping only the first appearance
+Meld <- distinct(Meld, countrycode, year)
+
+# Write out the resulting table
 write.csv(Meld, "~/coups.and.growth/data.out/data.raw.csv", row.names=FALSE)
