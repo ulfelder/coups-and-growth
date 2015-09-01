@@ -58,12 +58,20 @@ names(MEPV) <- tolower(names(MEPV))  # convert var names to lower case
 MEPV$countrycode <- countrycode(MEPV$country, "country.name", "iso3c") # add iso3c country codes for merging
 MEPV <- select(MEPV, countrycode, year, inttot, civtot)  # keep only vars we need 
 
+# Unified Democracy Scores
+temp5 <- tempfile()
+download.file("http://unified-democracy-scores.org/files/20140312/z/uds_summary.csv.gz", temp5)
+UDS <- read.csv(gzfile(temp5), stringsAsFactors = FALSE)
+UDS$countrycode <- countrycode(UDS$country, "country.name", "iso3c")
+UDS <- select(UDS, countrycode, year, uds.mean = mean)
+
 # Merge them on country codes, using Polity as the base because it is only complete one
 Meld <- left_join(Polity, PWT) %>% # add PWT to Polity, dropping PWT's country so we don't get extra sets of country names
     left_join(., select(ungroup(CoupsPT), -country)) %>% # add P&T coups to that; have to use ungroup to get rid of country for some reason
     left_join(., select(CoupsMM, -country)) %>% # add M&M coups to that
     left_join(., WDI) %>%  # add WDI
     left_join(., MEPV) %>%  # add MEPV
+    left_join(., UDS) %>%  # add UDS
     mutate(cpt.succ.n = ifelse(is.na(cpt.succ.n), 0, cpt.succ.n), cpt.fail.n = ifelse(is.na(cpt.fail.n), 0, cpt.fail.n)) %>% # replace coup NAs with 0s
     arrange(country, year)
 
