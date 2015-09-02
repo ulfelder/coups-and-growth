@@ -42,13 +42,14 @@ WDI <- c("NY.GDP.PCAP.PP.KD",          # GDP per capita, PPP (constant 2011 inte
          "FP.CPI.TOTL.ZG",             # Inflation, consumer prices (annual %)
          "SP.POP.TOTL",                # Population, total
          "SE.SEC.ENRR",                # School enrollment, secondary (% of pop of official 2ndary school age)
+         "DT.ODA.ODAT.GN.ZS",          # net overseas development assistance (ODA), % of GNI
          "NY.ADJ.DNGY.GN.ZS") %>%      # Adjusted savings: energy depletion (% of GNI)                                            
     WDI(country="all", indicator = ., extra = FALSE, start = 1960, end = 2014)
 WDI$countrycode <- countrycode(WDI$iso2c, "iso2c", "iso3c")  # add iso3c country codes
 WDI <- WDI %>%
     filter(is.na(countrycode)==FALSE) %>%  # drop rows for regions and world
     select(-iso2c, -country)  # drop extra country ids
-names(WDI) <- c("year", "gdppc", "trade", "fcf", "govfce", "inflation", "population", "sec.enrr", "energy.gni", "countrycode")  # give vars better names
+names(WDI) <- c("year", "gdppc", "trade", "fcf", "govfce", "inflation", "population", "sec.enrr", "oda", "energy.gni", "countrycode")  # give vars better names
 
 # MEPV
 temp4 <- paste0(tempfile(), ".xls")
