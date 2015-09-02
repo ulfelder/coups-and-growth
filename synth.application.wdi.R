@@ -1,5 +1,6 @@
 library(dplyr)
 library(Synth)
+library(gplots)
 
 # DATA INGESTION AND TRANSFORMATION
 
@@ -7,33 +8,50 @@ World <- read.csv("https://raw.githubusercontent.com/ulfelder/coups-and-growth/m
 
 World$idno = as.numeric(as.factor(World$country))  # create numeric country id required for synth()
 
+World$gdppc.ln = log(World$gdppc)  # GDP per capita, PPP (constant 2011 int'l $), logged
 World$population.ln = log(World$population/1000)  # population size in 1000s, logged
 World$trade.ln = log(World$trade)  # trade as % of GDP, logged
+World$inflation.s = rep(NA, nrow(World))  # inflation, s-curve based on square root
+for (i in 1:nrow(World))
+    if (is.na(World$inflation[i])==TRUE) {
+        World$inflation.s[i] = NA
+    } else if (World$inflation[i] < 0) {
+        World$inflation.s[i] = -1 * sqrt(abs(World$inflation[i]))
+    } else {
+        World$inflation.s[i] = sqrt(World$inflation[i])
+    }
+World$fcf.s = sqrt(abs(World$fcf))
+World$govfce.s = sqrt(abs(World$govfce))
+World$oda.s = sqrt(abs(World$oda))
 World$civtot.ln = log1p(World$civtot)  # civil conflict scale, +1 and logged
 World$durable.ln = log1p(World$durable)  # political stability, +1 and logged
 World$polscore = with(World, ifelse(polity >= -10, polity, NA)) # create version of Polity score that's missing for -66, -77, and -88
 
-World <- World %>%  # create clocks counting years since last coup (attempt) or 1950, whichever is most recent
-    arrange(countrycode, year) %>%
+# Markers for, and cumulative sums of, years with a) successful coups or b) any coup attempts, per P&T
+World <- group_by(World, country) %>%
+    arrange(year) %>%
     mutate(cpt.succ.d = ifelse(cpt.succ.n > 0, 1, 0),
-           cpt.any.d = ifelse(cpt.succ.n > 0 | cpt.fail.n > 0, 1, 0)) %>%
-    group_by(countrycode, idx = cumsum(cpt.succ.d == 1L)) %>%
-    mutate(cpt.succ.clock = row_number()) %>%
-    ungroup() %>%
-    group_by(countrycode) %>%
-    mutate(cpt.succ.cumsum = order_by(year, cumsum(cpt.succ.d))) %>%  # get cumsum of years w/successful coups by country to use as selection criterion before call to dataprep()
-    ungroup() %>%
-    group_by(countrycode, idx = cumsum(cpt.any.d == 1L)) %>%
-    mutate(cpt.any.clock = row_number()) %>%
-    ungroup() %>%
+           cpt.any.d = ifelse(cpt.succ.n > 0 | cpt.fail.n > 0, 1, 0),
+           cpt.succ.cumsum = cumsum(cpt.succ.d),
+           cpt.any.cumsum = cumsum(cpt.any.d))
+
+# Clocks counting years since last coup (attempt) or 1950, whichever is most recent, raw and logged
+World <- arrange(World, country, year) %>%
+    group_by(country, idx = cumsum(cpt.succ.d == 1L)) %>%
+    mutate(cpt.succ.clock = row_number(),
+           cpt.succ.clock.ln = log1p(cpt.succ.clock)) %>%
     select(-idx) %>%
-    mutate(cpt.succ.clock.ln = log1p(cpt.succ.clock), # include +1 log versions
+    as.data.frame()
+World <- arrange(World, country, year) %>%
+    group_by(country, idx = cumsum(cpt.any.d == 1L)) %>%
+    mutate(cpt.any.clock = row_number(),
            cpt.any.clock.ln = log1p(cpt.any.clock)) %>%
-    as.data.frame(.)
+    select(-idx) %>%
+    as.data.frame()
 
 # GENERIC TO ALL ITERATIONS
 
-match.criteria = c("gdppc", "fcf", "govfce", "trade", "inflation", "sec.enrr", "polscore", "durable.ln", "cpt.any.clock.ln", "civtot.ln")
+match.criteria = c("gdppc.ln", "fcf.s", "govfce.s", "trade.ln", "inflation.s", "oda.s", "uds.mean", "cpt.any.clock.ln", "civtot.ln")
 
 # THAILAND 2006
 
@@ -45,26 +63,28 @@ THI.years = seq(THI.coup.year - 5, THI.coup.year + 5)
 # Subset country-year data to balanced panels covering the period of observation and only including a) the treatment case and b) candidate
 # controls that have observations for all years in the window but no treatment during the window. If you want to condition control candidacy
 # on other stuff like region, this would be the place to do it.
-THI.World <- World %>%
-    filter(year >= min(THI.years) & year <= max(THI.years)) %>% # filter to desired years
+THI.criteria <- filter(World, year >= min(THI.years) & year <= max(THI.years)) %>% # filter to desired years
     group_by(idno) %>%  # organize by country
-    summarise(coup.ever = sum(cpt.any.d),  # get counts by country of years with coup attempts during that period
+    summarise(coup.before = ifelse(first(cpt.any.cumsum) > 0, 1, 0), # marker for countries that had 1+ coup attempt before window
+              coup.during = sum(cpt.succ.d),  # counts by country of years with successful coups during that period
               complete.panel = ifelse(length(year)==length(THI.years), 1, 0), # get indicator for countries with complete panels for period of observation
               missing.gdp = sum(is.na(gdppc)),  # get count of years with missing data on dependent var
-              missing.fcf = sum(is.na(fcf)),
+              missing.fcf = sum(is.na(fcf)),  # ditto for matching criteria
               missing.govfce = sum(is.na(govfce)),
               missing.trade = sum(is.na(trade)),
               missing.inflation = sum(is.na(inflation)),
-              missing.sec.enrr = sum(is.na(sec.enrr)),
-              missing.polscore = sum(is.na(polscore))) %>%
-    left_join(filter(World, year >= min(THI.years) & year <= max(THI.years)), .) %>%
-    # keep only those panels with no coup events, no missing values on PWT GDP, & fewer than 4 missing values on other vars with missingness
-    filter(coup.ever==0 & cpt.succ.cumsum > 0 & complete.panel==1 & missing.gdp==0 & missing.fcf <= 3 & missing.govfce <= 3 & 
-           missing.trade <= 3 & missing.inflation <= 3 & missing.sec.enrr <= 3 & missing.polscore <= 3) %>% 
-    select(1:49) %>%  # cut variables created in summarize step above, which we don't need any more, so next step works
-    full_join(., filter(World, country=="Thailand" & year >= min(THI.years) & year <= max(THI.years)))  # put Thailand back in
-# Get vector of country ids for candidate controls from that data frame
-THI.controls = unique(THI.World$idno[THI.World$country!="Thailand"])
+              missing.oda = sum(is.na(oda)),
+              missing.uds = sum(is.na(uds.mean)))
+THI.controls = THI.criteria %>%  # use summaries just created to identify countries that meet all criteria
+    filter(coup.before==1 & coup.during==0 & complete.panel==1 & missing.gdp <= 3 & missing.fcf <= 3 & missing.govfce <= 3 &
+        missing.trade <= 3 & missing.inflation <= 3 & missing.oda <= 3 & missing.uds <= 3) %>%
+    select(idno) %>%
+    unlist()
+names(THI.controls) = NULL
+
+# Filter original data frame by those cases plus Thailand, then by desired years
+THI.World <- World[which(World$idno %in% c(THI.controls, unique(World$idno[World$country=="Thailand"]))),]
+THI.World <- filter(THI.World, year >= min(THI.years) & year <= max(THI.years))
 
 # Run dataprep() on preprocessed data
 THI.synth.dat <- dataprep(
@@ -83,7 +103,7 @@ THI.synth.dat <- dataprep(
 )
 
 # Apply synth() to those data and inspect matching results via tables
-THI.synth.out <- synth(THI.synth.dat, optimxmethod="All", verbose=TRUE)
+THI.synth.out <- synth(THI.synth.dat, optimxmethod="All")
 THI.synth.tables <- synth.tab(dataprep.res = THI.synth.dat, synth.res = THI.synth.out)
 THI.synth.tables$tab.pred  # inspect balance
 THI.synth.tables$tab.w  # inspect weights
@@ -93,18 +113,26 @@ png("~/coups.and.growth/figs/THI.synth.plots.png", width=5, height=8, unit="in",
 par(mfrow=c(2,1))
 path.plot(synth.res = THI.synth.out, dataprep.res = THI.synth.dat,
     Ylab = "GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Legend = c("Thailand", "synthetic Thailand"), Legend.position = "bottomright")
-abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "gray50")
-text(x = THI.coup.year, y = 16000, "coup year", pos = 2, cex = 0.8)
+    Legend = c("Thailand", "synthetic control"), Legend.position = "bottomright")
+abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "red")
+text(x = THI.coup.year, y = 16000, "coup year", pos = 4, cex = 0.8)
 gaps.plot(synth.res = THI.synth.out, dataprep.res = THI.synth.dat,
     Ylab = "gap in GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
     Main = NA)
-abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "gray50")
-text(x = THI.coup.year, y = 750, "coup year", pos = 2, cex = 0.8)
+abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "red")
+text(x = THI.coup.year, y = 400, "coup year", pos = 4, cex = 0.8)
 dev.off()
 
+png("~/coups.and.growth/figs/THI.balance.png", width=5, height=2.5, unit="in", res=150)
+textplot(THI.synth.tables$tab.pred, mar=c(1/4,1/4,1/4,1/2))
+dev.off()
+
+png("~/coups.and.growth/figs/THI.weights.png", width=3, height=9, unit="in", res=150)
+textplot(THI.synth.tables$tab.w[,1:2], show.rownames=FALSE, mar=c(1/4,1/4,1/4,1/2))
+dev.off()
+
+
 # PLACEBO TESTS
-# Big thanks to Anton Strezhnev for sharing his code to do this part
 
 placebo_list_THI <- list()
 placebo_list_THI_data <- list()
@@ -200,29 +228,30 @@ dev.off()
 ###########################
 
 MAG.coup.year = 2009
+MAG.years = seq(MAG.coup.year - 5, MAG.coup.year + 4) # have to cut this one a year shorter than THI b/c WDI GDP ends in 2013
 
-MAG.years = seq(MAG.coup.year - 5, MAG.coup.year + 4) # have to cut this one shorter than THI b/c WDI GDP ends in 2013
-
-MAG.World <- World %>%
-    filter(year >= min(MAG.years) & year <= max(MAG.years)) %>% # filter to desired years
+MAG.criteria <- filter(World, year >= min(MAG.years) & year <= max(MAG.years)) %>% # filter to desired years
     group_by(idno) %>%  # organize by country
-    summarise(coup.ever = sum(cpt.any.d),  # get counts by country of years with coup attempts during that period
+    summarise(coup.before = ifelse(first(cpt.any.cumsum) > 0, 1, 0), # marker for countries that had 1+ coup attempt before window
+              coup.during = sum(cpt.succ.d),  # counts by country of years with successful coups during that period
               complete.panel = ifelse(length(year)==length(MAG.years), 1, 0), # get indicator for countries with complete panels for period of observation
               missing.gdp = sum(is.na(gdppc)),  # get count of years with missing data on dependent var
-              missing.fcf = sum(is.na(fcf)),
+              missing.fcf = sum(is.na(fcf)),  # ditto for matching criteria
               missing.govfce = sum(is.na(govfce)),
               missing.trade = sum(is.na(trade)),
               missing.inflation = sum(is.na(inflation)),
-              missing.sec.enrr = sum(is.na(sec.enrr)),
-              missing.polscore = sum(is.na(polscore))) %>%
-    left_join(filter(World, year >= min(MAG.years) & year <= max(MAG.years)), .) %>%
-    # keep only those panels with no coup events, no missing values on PWT GDP, & fewer than 4 missing values on other vars with missingness
-    filter(coup.ever==0 & cpt.succ.cumsum > 0 & complete.panel==1 & missing.gdp==0 & missing.fcf <= 3 & missing.govfce <= 3 & 
-           missing.trade <= 3 & missing.inflation <= 3 & missing.sec.enrr <= 3 & missing.polscore <= 3) %>% 
-    select(1:49) %>%  # cut variables created in summarize step above, which we don't need any more, so next step works
-    full_join(., filter(World, country=="Madagascar" & year >= min(MAG.years) & year <= max(MAG.years)))  # put Madagascar back in
-# Get vector of country ids for candidate controls from that data frame
-MAG.controls = unique(MAG.World$idno[MAG.World$country!="Madagascar"])
+              missing.oda = sum(is.na(oda)),
+              missing.uds = sum(is.na(uds.mean)))
+MAG.controls = MAG.criteria %>%  # use summaries just created to identify countries that meet all criteria
+    filter(coup.before==1 & coup.during==0 & complete.panel==1 & missing.gdp <= 3 & missing.fcf <= 3 & missing.govfce <= 3 &
+        missing.trade <= 3 & missing.inflation <= 3 & missing.oda <= 3 & missing.uds <= 3) %>%
+    select(idno) %>%
+    unlist()
+names(MAG.controls) = NULL
+
+# Filter original data frame by those cases plus Madagascar, then by desired years
+MAG.World <- World[which(World$idno %in% c(MAG.controls, unique(World$idno[World$country=="Madagascar"]))),]
+MAG.World <- filter(MAG.World, year >= min(MAG.years) & year <= max(MAG.years))
 
 MAG.synth.dat <- dataprep(
     foo = MAG.World,
@@ -239,7 +268,7 @@ MAG.synth.dat <- dataprep(
     time.plot = MAG.years
 )
 
-MAG.synth.out <- synth(MAG.synth.dat, optimxmethod="All", verbose=TRUE)
+MAG.synth.out <- synth(MAG.synth.dat, optimxmethod="All")
 MAG.synth.tables <- synth.tab(dataprep.res = MAG.synth.dat, synth.res = MAG.synth.out)
 MAG.synth.tables$tab.pred  # inspect balance
 MAG.synth.tables$tab.w  # inspect weights
@@ -247,14 +276,22 @@ png("~/coups.and.growth/figs/MAG.synth.plots.png", width=5, height=8, unit="in",
 par(mfrow=c(2,1))
 path.plot(synth.res = MAG.synth.out, dataprep.res = MAG.synth.dat,
     Ylab = "GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Legend = c("Madagascar", "synthetic Madagascar"), Legend.position = "bottomright")
-abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "gray50")
-text(x = MAG.coup.year, y = 2000, "coup year", pos = 2, cex = 0.8)
+    Legend = c("Madagascar", "synthetic control"), Legend.position = "bottomright")
+abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "red")
+text(x = MAG.coup.year, y = 2200, "coup year", pos = 4, cex = 0.8)
 gaps.plot(synth.res = MAG.synth.out, dataprep.res = MAG.synth.dat,
     Ylab = "gap in GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
     Main = NA)
-abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "gray50")
-text(x = MAG.coup.year, y = 300, "coup year", pos = 2, cex = 0.8)
+abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "red")
+text(x = MAG.coup.year, y = 425, "coup year", pos = 4, cex = 0.8)
+dev.off()
+
+png("~/coups.and.growth/figs/MAG.balance.png", width=5, height=2.5, unit="in", res=150)
+textplot(MAG.synth.tables$tab.pred, mar=c(1/4,1/4,1/4,1/2))
+dev.off()
+
+png("~/coups.and.growth/figs/MAG.weights.png", width=3, height=9, unit="in", res=150)
+textplot(MAG.synth.tables$tab.w[,1:2], show.rownames=FALSE, mar=c(1/4,1/4,1/4,1/2))
 dev.off()
 
 # PLACEBO TESTS
@@ -285,7 +322,7 @@ for (k in MAG.controls){
     time.plot = MAG.years)
     
    ## Synthetic Matching
-   placebo.result <- synth(data.prep.obj = MAG_placebo, method="BFGS")
+   placebo.result <- synth(data.prep.obj = MAG_placebo)
 
    ## Save to list
    placebo_list_MAG[[k]] <- placebo.result
