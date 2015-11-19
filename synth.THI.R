@@ -108,25 +108,43 @@ THI.synth.tables <- synth.tab(dataprep.res = THI.synth.dat, synth.res = THI.synt
 THI.synth.tables$tab.pred  # inspect balance
 THI.synth.tables$tab.w  # inspect weights
 
-# Make diptych plot of path and gap
-png("~/coups.and.growth/figs/THI.synth.plots.v5.png", width=5, height=8, unit="in", res=150)
-par(mfrow=c(2,1))
-path.plot(synth.res = THI.synth.out, dataprep.res = THI.synth.dat,
-    Ylab = "GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Legend = c("Thailand", "synthetic control"), Legend.position = "bottomright")
-abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "red")
-text(x = THI.coup.year, y = 16000, "coup year", pos = 4, cex = 0.8)
-gaps.plot(synth.res = THI.synth.out, dataprep.res = THI.synth.dat,
-    Ylab = "gap in GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Main = NA)
-abline(v = THI.coup.year, lty = "dotted", lwd = 2, col = "red")
-text(x = THI.coup.year, y = 400, "coup year", pos = 4, cex = 0.8)
+# Plot path
+path.case <- THI.synth.dat$Y1plot
+path.synth <- THI.synth.dat$Y0plot %*% THI.synth.out$solution.w
+png("~/coups.and.growth/figs/THI.synth.plots.path.png", width=5, height=4, unit="in", res=150)
+par(cex.axis=3/4, cex.lab=4/5, mai=c(1/2,1,1/4,1/4))
+plot(x=THI.years, y=path.synth, type="n", axes=FALSE, ylim=c(8000,14000),
+  xlab="year", ylab="GDP per capita (PPP, constant 2011 intl $)", lwd=2) 
+abline(v=THI.coup.year, col="red", lty=2) # Vertical line at the point of treatment
+text(x = THI.coup.year, y = 14000, "coup year", pos = 2, cex = 0.8)  # Label that line
+axis(1, tick=FALSE)
+axis(2, tick=FALSE, at=seq(8000,14000,2000), labels=paste0("$", seq(8000,14000,2000)), las=2, pos=min(THI.years)+1/2)
+lines(x=THI.years, y=path.case, type="l", lwd=2) # Plot the main series
+lines(x=THI.years, y=path.synth, type="l", lty=2, lwd=2, col="gray50") # Plot the synth series as dashed line
+legend(x="bottomright", legend=c("Thailand", "synthetic control"), lty=c(1,2), lwd=c(2,2), col=c("black", "gray50"), cex=3/4, bty="n")
 dev.off()
 
+# Plot gap
+gap <- THI.synth.dat$Y1plot - (THI.synth.dat$Y0plot %*% THI.synth.out$solution.w)  # Get vector of gap
+gap.as.pct <- 100 * (gap / THI.synth.dat$Y0plot %*% THI.synth.out$solution.w)  # Calculate gap as % of synthetic control
+png("~/coups.and.growth/figs/THI.synth.plots.gap.png", width=5, height=4, unit="in", res=150)
+par(cex.axis=3/4, cex.lab=4/5, mai=c(1/2,1,1/4,1/4))
+plot(x=THI.years, y=gap.as.pct, type="n", axes=FALSE, ylim=c(-25,25),
+  xlab="year", ylab="Percent difference in GDP per capita \nrelative to synthetic control", lwd=2) 
+segments(x0=min(THI.years), x1=max(THI.years), y0=0, y1=0, lwd=2, lty=2, col="gray25") # Horizontal Line at 0
+abline(v=THI.coup.year, col="red", lty=2) # Vertical line at the point of treatment
+text(x = THI.coup.year, y = 25, "coup year", pos = 2, cex = 0.8)
+axis(1, tick=FALSE)
+axis(2, tick=FALSE, at=seq(-20,20,10), labels=paste0(seq(-20,20,10), "%"), las=2)
+lines(x=THI.years, y=gap.as.pct, type="l", lwd=2) # Plot the series
+dev.off()
+
+# Output information about balance
 png("~/coups.and.growth/figs/THI.balance.v5.png", width=5, height=2.5, unit="in", res=150)
 textplot(THI.synth.tables$tab.pred, mar=c(1/4,1/4,1/4,1/2))
 dev.off()
 
+# Output information about weights
 png("~/coups.and.growth/figs/THI.weights.v5.png", width=3, height=9, unit="in", res=150)
 textplot(THI.synth.tables$tab.w[,1:2], show.rownames=FALSE, mar=c(1/4,1/4,1/4,1/2))
 dev.off()
