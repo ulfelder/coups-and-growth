@@ -109,25 +109,43 @@ MAG.synth.tables <- synth.tab(dataprep.res = MAG.synth.dat, synth.res = MAG.synt
 MAG.synth.tables$tab.pred  # inspect balance
 MAG.synth.tables$tab.w  # inspect weights
 
-# Make diptych plot of path and gap
-png("~/coups.and.growth/figs/MAG.synth.plots.v5.png", width=5, height=8, unit="in", res=150)
-par(mfrow=c(2,1), cex.axis=4/5)
-path.plot(synth.res = MAG.synth.out, dataprep.res = MAG.synth.dat,
-    Ylab = "GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Legend = c("Madagascar", "synthetic control"), Legend.position = "bottomright")
-abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "red")
-text(x = MAG.coup.year, y = 2100, "coup year", pos = 4, cex = 0.8)
-gaps.plot(synth.res = MAG.synth.out, dataprep.res = MAG.synth.dat,
-    Ylab = "gap in GDP per capita, PPP (constant 2011 int'l $)", Xlab = "year",
-    Main = NA)
-abline(v = MAG.coup.year, lty = "dotted", lwd = 2, col = "red")
-text(x = MAG.coup.year, y = 325, "coup year", pos = 4, cex = 0.8)
+# Plot path
+path.case <- MAG.synth.dat$Y1plot
+path.synth <- MAG.synth.dat$Y0plot %*% MAG.synth.out$solution.w
+png("~/coups.and.growth/figs/MAG.synth.plots.path.png", width=5, height=4, unit="in", res=150)
+par(cex.axis=3/4, cex.lab=4/5, mai=c(1/2,1,1/4,1/4))
+plot(x=MAG.years, y=path.synth, type="n", axes=FALSE, ylim=c(1000,2000),
+  xlab="year", ylab="GDP per capita (PPP, constant 2011 intl $)", lwd=2) 
+abline(v=MAG.coup.year, col="red", lty=2) # Vertical line at the point of treatment
+text(x = MAG.coup.year, y = 2000, "coup year", pos=2, cex=0.8)  # Label that line
+axis(1, tick=FALSE)
+axis(2, tick=FALSE, at=seq(1000,2000,250), labels=paste0("$", seq(1000,2000,250)), las=2, pos=min(MAG.years))
+lines(x=MAG.years, y=path.case, type="l", lwd=2) # Plot the main series
+lines(x=MAG.years, y=path.synth, type="l", lty=2, lwd=2, col="gray50") # Plot the synth series as dashed line
+legend(x="bottomright", legend=c("Madagascar", "synthetic control"), lty=c(1,2), lwd=c(2,2), col=c("black", "gray50"), cex=3/4, bty="n")
 dev.off()
 
+# Plot gap
+gap <- MAG.synth.dat$Y1plot - (MAG.synth.dat$Y0plot %*% MAG.synth.out$solution.w)  # Get vector of gap
+gap.as.pct <- 100 * (gap / MAG.synth.dat$Y0plot %*% MAG.synth.out$solution.w)  # Calculate gap as % of synthetic control
+png("~/coups.and.growth/figs/MAG.synth.plots.gap.png", width=5, height=4, unit="in", res=150)
+par(cex.axis=3/4, cex.lab=4/5, mai=c(1/2,1,1/4,1/4))
+plot(x=MAG.years, y=gap.as.pct, type="n", axes=FALSE, ylim=c(-25,25),
+  xlab="year", ylab="Percent difference in GDP per capita \nrelative to synthetic control", lwd=2) 
+segments(x0=min(MAG.years), x1=max(MAG.years), y0=0, y1=0, lwd=2, lty=2, col="gray25") # Horizontal Line at 0
+abline(v=MAG.coup.year, col="red", lty=2) # Vertical line at the point of treatment
+text(x = MAG.coup.year, y = 25, "coup year", pos = 2, cex = 0.8)
+axis(1, tick=FALSE)
+axis(2, tick=FALSE, at=seq(-20,20,10), labels=paste0(seq(-20,20,10), "%"), las=2)
+lines(x=MAG.years, y=gap.as.pct, type="l", lwd=2) # Plot the series
+dev.off()
+
+# Output information about balance
 png("~/coups.and.growth/figs/MAG.balance.v5.png", width=5, height=2.5, unit="in", res=150)
 textplot(MAG.synth.tables$tab.pred, mar=c(1/4,1/4,1/4,1/2))
 dev.off()
 
+# Output information about weights
 png("~/coups.and.growth/figs/MAG.weights.v5.png", width=3, height=9, unit="in", res=150)
 textplot(MAG.synth.tables$tab.w[,1:2], show.rownames=FALSE, mar=c(1/4,1/4,1/4,1/2))
 dev.off()
